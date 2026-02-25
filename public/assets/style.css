@@ -596,6 +596,12 @@ button.is-loading::after {
   display: flex;
   gap: 1rem;
   align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.template-row > * {
+  min-width: 0;
 }
 
 .editor-mode-switch {
@@ -638,6 +644,7 @@ button.is-loading::after {
   border: 1px solid var(--border);
   background: #faf8f4;
   margin-bottom: 0.8rem;
+  overflow: hidden;
 }
 
 .toolbar-group {
@@ -645,6 +652,8 @@ button.is-loading::after {
   flex-wrap: wrap;
   gap: 0.4rem;
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .editor-toolbar .icon-btn {
@@ -1371,6 +1380,20 @@ input[type="file"]::-webkit-file-upload-button {
   white-space: nowrap;
 }
 
+.editor-toolbar .compact-field {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.editor-toolbar .compact-field span {
+  white-space: normal;
+}
+
+.editor-toolbar .compact-field select,
+.editor-toolbar .compact-field input {
+  max-width: 100%;
+}
+
 .template-gallery {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1389,6 +1412,8 @@ input[type="file"]::-webkit-file-upload-button {
   cursor: pointer;
   color: var(--ink);
   font: inherit;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .template-card:hover {
@@ -1402,20 +1427,28 @@ input[type="file"]::-webkit-file-upload-button {
 }
 
 .template-card-head {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 0.45rem;
   color: var(--ink);
+  min-width: 0;
 }
 
 .template-card-head .icon {
   color: var(--accent);
+  flex: 0 0 auto;
 }
 
 .template-card-copy {
   color: var(--muted);
   font-size: 0.8rem;
   line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.template-card-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .sidebar-card {
@@ -2582,6 +2615,14 @@ input[type="file"]::-webkit-file-upload-button {
 
 .templates-ai-grid .field-span-2 {
   grid-column: span 4;
+}
+
+.template-ai-modal {
+  width: min(860px, 94vw);
+}
+
+.template-ai-modal .modal-body {
+  gap: 1rem;
 }
 
 .template-editor-form .button,
