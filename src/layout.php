@@ -21,7 +21,7 @@ function render_header(string $title, string $activePage): void
     echo "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n";
     echo "  <meta name=\"mailr-csrf\" content=\"" . htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8') . "\">\n";
     echo "  <title>Mailr · {$title}</title>\n";
-    echo "  <link rel=\"stylesheet\" href=\"/assets/style.css\">\n";
+    echo "  <link rel=\"stylesheet\" href=\"" . htmlspecialchars(asset_url('style.css'), ENT_QUOTES, 'UTF-8') . "\">\n";
     echo "</head>\n";
     echo "<body>\n";
     echo "  <svg aria-hidden=\"true\" class=\"ui-icon-sprite\">\n";
@@ -119,6 +119,16 @@ function render_header(string $title, string $activePage): void
         $message = htmlspecialchars((string) $flash['message']);
         echo "    <div class=\"flash {$type}\">{$message}</div>\n";
     }
+}
+
+function asset_url(string $file): string
+{
+    $file = ltrim($file, '/');
+    $docRoot = rtrim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''), '/');
+    if ($docRoot !== '' && is_file($docRoot . '/assets/' . $file)) {
+        return '/assets/' . $file;
+    }
+    return '/public/assets/' . $file;
 }
 
 function render_footer(): void
