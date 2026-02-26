@@ -2720,6 +2720,19 @@ input[type="file"]::-webkit-file-upload-button {
   margin-top: 0.35rem;
 }
 
+.overview-live-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.overview-live-title {
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 0.15rem;
+}
+
 .contacts-admin-grid {
   display: grid;
   grid-template-columns: 1fr 1.25fr;
@@ -2943,6 +2956,11 @@ input[type="file"]::-webkit-file-upload-button {
 
   .overview-grid {
     grid-template-columns: 1fr;
+  }
+
+  .overview-live-controls {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .overview-meta-grid {

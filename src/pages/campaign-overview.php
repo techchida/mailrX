@@ -57,6 +57,7 @@ $timelineSteps = [
 ];
 $canPause = in_array($status, ['Scheduled', 'Sent'], true) && $queuedRecipients > 0;
 $canResume = $status === 'Paused';
+$autoRefreshEligible = in_array($status, ['Scheduled', 'Sent'], true) && (($queuedRecipients + (int) ($deliveryStats['processing_count'] ?? 0)) > 0);
 ?>
 
 <section class="overview-hero">
@@ -182,6 +183,19 @@ $canResume = $status === 'Paused';
   </aside>
 </section>
 
+<section class="card overview-live-controls" data-overview-live="<?php echo $autoRefreshEligible ? '1' : '0'; ?>">
+  <div>
+    <div class="overview-live-title">Live Progress</div>
+    <div class="muted" id="overviewLiveStatus">
+      <?php echo $autoRefreshEligible ? 'Auto-refresh every 10 seconds while delivery is in progress.' : 'Delivery is idle. Use refresh to check latest status.'; ?>
+    </div>
+  </div>
+  <div class="button-row">
+    <button type="button" class="ghost" id="overviewRefreshNow">Refresh</button>
+    <button type="button" class="ghost" id="overviewAutoRefreshToggle"><?php echo $autoRefreshEligible ? 'Pause Auto-Refresh' : 'Auto-Refresh Off'; ?></button>
+  </div>
+</section>
+
 <section class="overview-grid">
   <section class="card overview-panel">
     <div class="overview-panel-head">
@@ -236,6 +250,68 @@ $canResume = $status === 'Paused';
     <?php endif; ?>
   </section>
 </section>
+
+<script>
+(() => {
+  const livePanel = document.querySelector('.overview-live-controls');
+  if (!livePanel) return;
+  const refreshBtn = document.getElementById('overviewRefreshNow');
+  const autoBtn = document.getElementById('overviewAutoRefreshToggle');
+  const liveStatus = document.getElementById('overviewLiveStatus');
+  const eligible = livePanel.dataset.overviewLive === '1';
+  let timer = null;
+  let enabled = eligible;
+  let countdown = 10;
+
+  const tickLabel = () => {
+    if (!liveStatus) return;
+    if (!enabled || !eligible) return;
+    liveStatus.textContent = `Auto-refreshing in ${countdown}s while delivery is in progress.`;
+  };
+
+  const stop = () => {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  };
+
+  const start = () => {
+    if (!eligible || !enabled) return;
+    stop();
+    countdown = 10;
+    tickLabel();
+    timer = setInterval(() => {
+      countdown -= 1;
+      if (countdown <= 0) {
+        window.location.reload();
+        return;
+      }
+      tickLabel();
+    }, 1000);
+  };
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => window.location.reload());
+  }
+
+  if (autoBtn) {
+    autoBtn.addEventListener('click', () => {
+      if (!eligible) return;
+      enabled = !enabled;
+      autoBtn.textContent = enabled ? 'Pause Auto-Refresh' : 'Resume Auto-Refresh';
+      if (enabled) {
+        start();
+      } else {
+        stop();
+        if (liveStatus) liveStatus.textContent = 'Auto-refresh paused. Click Refresh or resume auto-refresh.';
+      }
+    });
+  }
+
+  start();
+})();
+</script>
 
 <section class="card overview-panel recipients-panel">
   <div class="overview-panel-head recipients-head">

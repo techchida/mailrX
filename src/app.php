@@ -3694,60 +3694,31 @@ function handle_campaign_action(string $action): void
             redirect_to('/index.php?page=create-campaign&campaign_id=' . $campaignId);
         }
 
-        $status = $scheduleAt !== '' ? 'Scheduled' : 'Sent';
+        $status = 'Scheduled';
         $payload['status'] = $status;
         $payload['updated_at'] = date('Y-m-d H:i:s');
         update_campaign($campaignId, $payload);
         $queuedCount = queue_campaign_recipients($campaignId, $contactListId);
-
-        $batchSize = max(1, (int) (getenv('MAILR_SEND_BATCH_SIZE') ?: 50));
-        $delayMs = max(0, (int) (getenv('MAILR_SEND_BATCH_DELAY_MS') ?: 150));
-
         $deliveryResult = [
             'ok' => true,
-            'sent' => 0,
-            'failed' => 0,
-            'processed' => 0,
             'errors' => [],
             'stats' => fetch_campaign_delivery_stats($campaignId),
         ];
-
-        if ($status === 'Sent') {
-            $deliveryResult = process_campaign_delivery($campaignId, $batchSize, $delayMs);
-            $stats = $deliveryResult['stats'] ?? fetch_campaign_delivery_stats($campaignId);
-            $statusDetail = sprintf(
-                'Campaign published and processed. Sent: %d, Failed: %d, Queued remaining: %d',
-                (int) ($stats['sent_count'] ?? 0),
-                (int) ($stats['failed_count'] ?? 0),
-                (int) (($stats['queued_count'] ?? 0) + ($stats['processing_count'] ?? 0))
-            );
-            add_campaign_event($campaignId, 'published', $statusDetail);
-            if (($deliveryResult['ok'] ?? false) === false) {
-                flash_set('error', (string) ($deliveryResult['message'] ?? 'Publish processing failed.'));
-            } elseif ((int) ($stats['failed_count'] ?? 0) > 0) {
-                flash_set('error', 'Campaign published, but some recipients failed. Check overview for details.');
-            } else {
-                flash_set('success', 'Campaign published and delivered.');
-            }
-        } else {
-            add_campaign_event($campaignId, 'published', 'Campaign published with status: Scheduled. Queued recipients: ' . $queuedCount);
-            flash_set('success', 'Campaign scheduled and recipients queued.');
-        }
+        $queueMode = $scheduleAt !== '' ? 'scheduled send' : 'queue-only immediate send';
+        add_campaign_event($campaignId, 'published', 'Campaign published (' . $queueMode . '). Queued recipients: ' . $queuedCount . '. Delivery will be processed by the queue worker.');
+        flash_set('success', $scheduleAt !== '' ? 'Campaign scheduled and recipients queued.' : 'Campaign published and queued for background delivery.');
 
         if ($ajax) {
             $stats = $deliveryResult['stats'] ?? fetch_campaign_delivery_stats($campaignId);
             json_response([
                 'ok' => (bool) ($deliveryResult['ok'] ?? true),
-                'message' => $status === 'Scheduled'
-                    ? 'Campaign scheduled and recipients queued.'
-                    : ((int) ($stats['failed_count'] ?? 0) > 0
-                        ? 'Campaign published, but some recipients failed.'
-                        : 'Campaign published and delivered.'),
+                'message' => $scheduleAt !== '' ? 'Campaign scheduled and recipients queued.' : 'Campaign published and queued for background delivery.',
                 'campaign_id' => $campaignId,
                 'published_status' => $status,
                 'delivery_stats' => $stats,
                 'failed' => $deliveryResult['errors'] ?? [],
                 'redirect_url' => '/index.php?page=create-campaign&campaign_id=' . $campaignId,
+                'overview_url' => '/index.php?page=campaign-overview&campaign_id=' . $campaignId,
             ], ($deliveryResult['ok'] ?? true) ? 200 : 500);
         }
     }
