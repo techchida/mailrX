@@ -2836,16 +2836,22 @@ function normalize_line_endings(string $content): string
 function personalize_content(string $content, array $contact): string
 {
     $name = trim((string) ($contact['name'] ?? ''));
+    $firstNameRaw = trim((string) ($contact['first_name'] ?? ''));
+    $lastNameRaw = trim((string) ($contact['last_name'] ?? ''));
     if ($name === '') {
-        $name = trim(((string) ($contact['first_name'] ?? '')) . ' ' . ((string) ($contact['last_name'] ?? '')));
+        $name = trim($firstNameRaw . ' ' . $lastNameRaw);
     }
     $parts = preg_split('/\s+/', trim($name));
-    $firstName = $parts[0] ?? '';
+    $firstName = $firstNameRaw !== '' ? $firstNameRaw : ($parts[0] ?? '');
     $replacements = [
         '{{first_name}}' => $firstName,
+        '{{last_name}}' => $lastNameRaw,
         '{{name}}' => $name,
+        '{{full_name}}' => $name,
         '{{email}}' => (string) ($contact['email'] ?? ''),
+        '{{tags}}' => (string) ($contact['tags'] ?? ''),
         '{{company}}' => (string) ($contact['company'] ?? ''),
+        '{{title}}' => (string) ($contact['title'] ?? ''),
         '{{cta_url}}' => (string) ($contact['cta_url'] ?? ''),
     ];
 
