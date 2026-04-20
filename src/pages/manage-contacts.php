@@ -40,6 +40,7 @@ $dataPointsMap = $data['contact_list_data_points'] ?? [];
     </div>
     <form class="field-grid" method="post" enctype="multipart/form-data">
       <input type="hidden" name="action" value="import_contacts" />
+      <input type="hidden" name="import_mode" value="insert_only" />
       <label class="field">
         <span>New List Name</span>
         <input type="text" name="list_name" placeholder="e.g. February Leads" required />
@@ -137,9 +138,16 @@ $dataPointsMap = $data['contact_list_data_points'] ?? [];
                   <span>Default Tags</span>
                   <input type="text" name="tags" placeholder="optional default tags" />
                 </label>
+                <label class="field">
+                  <span>Merge Mode <?php echo ui_info_popover('Insert New Only keeps existing contacts unchanged. Insert + Update Existing merges non-empty incoming values into matching emails, including custom placeholder fields.'); ?></span>
+                  <select name="import_mode">
+                    <option value="insert_only">Insert New Only</option>
+                    <option value="upsert_existing">Insert + Update Existing</option>
+                  </select>
+                </label>
                 <div class="contact-list-append-note">
                   <svg class="icon"><use href="#uii-info"></use></svg>
-                  <span>Duplicate emails in this list are skipped. Only new emails are inserted.</span>
+                  <span>Use update mode when your CSV adds new columns like plan, city, coupon_code, or other personalization fields for existing emails.</span>
                 </div>
                 <div class="button-row">
                   <button class="button" type="submit" data-loading-text="Updating...">Upload & Merge</button>

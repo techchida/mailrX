@@ -2143,8 +2143,27 @@ function update_contact_list_count(int $listId): void
     ]);
 }
 
-function import_contacts_from_csv_report(int $listId, array $file, string $defaultTags = ''): array
+function merge_contact_custom_field_sets(mixed $existing, array $incoming): ?string
 {
+    $merged = contact_custom_fields_array($existing);
+    foreach ($incoming as $key => $value) {
+        $normalizedKey = normalize_placeholder_key((string) $key);
+        $normalizedValue = trim((string) $value);
+        if ($normalizedKey === '' || $normalizedValue === '') {
+            continue;
+        }
+        $merged[$normalizedKey] = $normalizedValue;
+    }
+    if ($merged === []) {
+        return null;
+    }
+    $encoded = json_encode($merged, JSON_UNESCAPED_SLASHES);
+    return $encoded !== false ? $encoded : null;
+}
+
+function import_contacts_from_csv_report(int $listId, array $file, string $defaultTags = '', string $mode = 'insert_only'): array
+{
+    $mode = $mode === 'upsert_existing' ? 'upsert_existing' : 'insert_only';
     if ($file['error'] !== UPLOAD_ERR_OK) {
         throw new RuntimeException('Upload failed.');
     }
@@ -2193,13 +2212,13 @@ function import_contacts_from_csv_report(int $listId, array $file, string $defau
     }
 
     $pdo = db();
-    $existingStmt = $pdo->prepare("SELECT email FROM contacts WHERE list_id = :list_id");
+    $existingStmt = $pdo->prepare("SELECT id, email, first_name, last_name, tags, custom_fields FROM contacts WHERE list_id = :list_id");
     $existingStmt->execute(['list_id' => $listId]);
     $knownEmails = [];
-    foreach ($existingStmt->fetchAll(PDO::FETCH_COLUMN) as $existingEmail) {
-        $normalized = strtolower(trim((string) $existingEmail));
+    foreach ($existingStmt->fetchAll() as $existingRow) {
+        $normalized = strtolower(trim((string) ($existingRow['email'] ?? '')));
         if ($normalized !== '') {
-            $knownEmails[$normalized] = true;
+            $knownEmails[$normalized] = $existingRow;
         }
     }
 
@@ -2207,9 +2226,18 @@ function import_contacts_from_csv_report(int $listId, array $file, string $defau
         "INSERT INTO contacts (list_id, email, first_name, last_name, tags, custom_fields, created_at)
          VALUES (:list_id, :email, :first_name, :last_name, :tags, :custom_fields, :created_at)"
     );
+    $update = $pdo->prepare(
+        "UPDATE contacts
+         SET first_name = :first_name,
+             last_name = :last_name,
+             tags = :tags,
+             custom_fields = :custom_fields
+         WHERE id = :id"
+    );
 
     $imported = 0;
     $duplicates = 0;
+    $updated = 0;
     $processedRows = 0;
     while (($row = fgetcsv($handle)) !== false) {
         $processedRows += 1;
@@ -2221,11 +2249,6 @@ function import_contacts_from_csv_report(int $listId, array $file, string $defau
         if ($normalizedEmail === '') {
             continue;
         }
-        if (isset($knownEmails[$normalizedEmail])) {
-            $duplicates += 1;
-            continue;
-        }
-
         $firstName = get_csv_value($row, $headerMap, 'first_name');
         $lastName = get_csv_value($row, $headerMap, 'last_name');
         $name = get_csv_value($row, $headerMap, 'name');
@@ -2248,6 +2271,36 @@ function import_contacts_from_csv_report(int $listId, array $file, string $defau
             }
             $customFields[$columnKey] = $value;
         }
+
+        if (isset($knownEmails[$normalizedEmail])) {
+            if ($mode !== 'upsert_existing') {
+                $duplicates += 1;
+                continue;
+            }
+            $existing = $knownEmails[$normalizedEmail];
+            $mergedFirstName = $firstName !== '' ? $firstName : (string) ($existing['first_name'] ?? '');
+            $mergedLastName = $lastName !== '' ? $lastName : (string) ($existing['last_name'] ?? '');
+            $mergedTags = $tags !== '' ? $tags : (string) ($existing['tags'] ?? '');
+            $mergedCustomFieldsJson = merge_contact_custom_field_sets($existing['custom_fields'] ?? null, $customFields);
+            $update->execute([
+                'first_name' => $mergedFirstName,
+                'last_name' => $mergedLastName,
+                'tags' => $mergedTags,
+                'custom_fields' => $mergedCustomFieldsJson,
+                'id' => (int) ($existing['id'] ?? 0),
+            ]);
+            $knownEmails[$normalizedEmail] = [
+                'id' => (int) ($existing['id'] ?? 0),
+                'email' => $normalizedEmail,
+                'first_name' => $mergedFirstName,
+                'last_name' => $mergedLastName,
+                'tags' => $mergedTags,
+                'custom_fields' => $mergedCustomFieldsJson,
+            ];
+            $updated += 1;
+            continue;
+        }
+
         $customFieldsJson = $customFields !== [] ? json_encode($customFields, JSON_UNESCAPED_SLASHES) : null;
 
         $insert->execute([
@@ -2261,7 +2314,14 @@ function import_contacts_from_csv_report(int $listId, array $file, string $defau
         ]);
 
         $imported += 1;
-        $knownEmails[$normalizedEmail] = true;
+        $knownEmails[$normalizedEmail] = [
+            'id' => (int) $pdo->lastInsertId(),
+            'email' => $normalizedEmail,
+            'first_name' => $firstName,
+            'last_name' => $lastName,
+            'tags' => $tags,
+            'custom_fields' => $customFieldsJson,
+        ];
     }
 
     fclose($handle);
@@ -2270,6 +2330,7 @@ function import_contacts_from_csv_report(int $listId, array $file, string $defau
 
     return [
         'inserted' => $imported,
+        'updated' => $updated,
         'duplicates_skipped' => $duplicates,
         'rows_processed' => $processedRows,
     ];
@@ -3813,6 +3874,8 @@ function handle_import_contacts(): void
 {
     $listName = trim((string) ($_POST['list_name'] ?? ''));
     $tags = trim((string) ($_POST['tags'] ?? ''));
+    $mode = (string) ($_POST['import_mode'] ?? 'insert_only');
+    $mode = $mode === 'upsert_existing' ? 'upsert_existing' : 'insert_only';
     if ($listName === '') {
         flash_set('error', 'Provide a list name for import.');
         redirect_to('/index.php?page=manage-contacts');
@@ -3825,15 +3888,19 @@ function handle_import_contacts(): void
 
     $listId = create_contact_list($listName);
     try {
-        $report = import_contacts_from_csv_report($listId, $_FILES['upload_csv'], $tags);
+        $report = import_contacts_from_csv_report($listId, $_FILES['upload_csv'], $tags, $mode);
     } catch (RuntimeException $e) {
         flash_set('error', $e->getMessage());
         redirect_to('/index.php?page=manage-contacts');
     }
 
     $inserted = (int) ($report['inserted'] ?? 0);
+    $updated = (int) ($report['updated'] ?? 0);
     $duplicates = (int) ($report['duplicates_skipped'] ?? 0);
     $message = 'Imported ' . $inserted . ' contacts.';
+    if ($updated > 0) {
+        $message .= ' Updated ' . $updated . ' existing contact(s).';
+    }
     if ($duplicates > 0) {
         $message .= ' Skipped ' . $duplicates . ' duplicate email(s).';
     }
@@ -3845,6 +3912,8 @@ function handle_append_contacts_to_list(): void
 {
     $listId = (int) ($_POST['list_id'] ?? 0);
     $tags = trim((string) ($_POST['tags'] ?? ''));
+    $mode = (string) ($_POST['import_mode'] ?? 'insert_only');
+    $mode = $mode === 'upsert_existing' ? 'upsert_existing' : 'insert_only';
     if ($listId <= 0) {
         flash_set('error', 'Select a valid contact list.');
         redirect_to('/index.php?page=manage-contacts');
@@ -3856,15 +3925,25 @@ function handle_append_contacts_to_list(): void
     }
 
     try {
-        $report = import_contacts_from_csv_report($listId, $_FILES['upload_csv'], $tags);
+        $report = import_contacts_from_csv_report($listId, $_FILES['upload_csv'], $tags, $mode);
     } catch (RuntimeException $e) {
         flash_set('error', $e->getMessage());
         redirect_to('/index.php?page=manage-contacts');
     }
 
     $inserted = (int) ($report['inserted'] ?? 0);
+    $updated = (int) ($report['updated'] ?? 0);
     $duplicates = (int) ($report['duplicates_skipped'] ?? 0);
-    flash_set('success', 'List updated. Added ' . $inserted . ' new contact(s)' . ($duplicates > 0 ? ' and skipped ' . $duplicates . ' duplicate email(s).' : '.'));
+    $message = 'List updated. Added ' . $inserted . ' new contact(s)';
+    if ($updated > 0) {
+        $message .= ', updated ' . $updated . ' existing contact(s)';
+    }
+    if ($duplicates > 0) {
+        $message .= ', and skipped ' . $duplicates . ' duplicate email(s).';
+    } else {
+        $message .= '.';
+    }
+    flash_set('success', $message);
     redirect_to('/index.php?page=manage-contacts');
 }
 
